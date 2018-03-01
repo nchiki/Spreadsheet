@@ -1,36 +1,89 @@
 package spreadsheet;
 
 import common.api.CellLocation;
+import common.api.ExpressionUtils;
+import common.api.monitor.Tracker;
+import common.api.value.InvalidValue;
 import common.api.value.StringValue;
 import common.api.value.Value;
+import java.util.HashSet;
+import java.util.Set;
 
-public class Cell {
+public class Cell implements Tracker{
+
   private Value value;
-  private StringValue expression;
+  private String expression;
   private Spreadsheet spreadsheet;
   private CellLocation location;
+  public Set<Cell> references;
+  public Set<Tracker<Cell>> trackCell;
 
-  public Cell(CellLocation location, Spreadsheet s){
+  public Cell(CellLocation location, Spreadsheet s) {
+    references = new HashSet<>();
     this.value = null;
-    expression = new StringValue("");
+    expression = ""; //StringValue or just String
     this.location = location;
     this.spreadsheet = s;
+    this.trackCell = new HashSet<>();
   }
 
-  void setValue(Value givenVal){
-   this.value = givenVal;
+  void setValue(Value givenVal) {
+    this.value = givenVal;
   }
 
-  Value getValue(){
+  Value getValue() {
     return this.value;
   }
 
-  void setExpression(String expr){
-    this.expression = new StringValue(expr);
+
+  void unsubscribe(){
+   for(Cell ref : this.references){
+     ref.trackCell.remove(this); //removes cell from list of cells that depend on it
+   }
+   this.references.clear(); //forgetting references
   }
 
-  StringValue getExpression(){
+  void subscribe(){ //adds this cell to Trackerset of references
+    for(Cell ref: this.references){
+      ref.trackCell.add(this);
+    }
+  }
+
+  void setExpression(String expr) {   //clears references and Tracker Set after changing cell's expression
+    this.expression = expr;
+    for(Cell ref : this.references){
+      ref.update(this);   //updates all referenced cells
+    }
+    this.unsubscribe();
+    Set<CellLocation> refLoc = ExpressionUtils.getReferencedLocations(expr);
+    for (CellLocation loc : refLoc) {
+      Cell ref = this.spreadsheet.cells.get(loc);
+      this.references.add(ref); // creates the Set<Cell> with all the cells that are referenced by this cell
+    }
+    this.value = new InvalidValue(expr);
+    this.subscribe();
+    if (!this.spreadsheet.recompCells.contains(this)) {
+      this.spreadsheet.recompCells.add(this);//adding Cell to the Set of Cells to be recomputed
+    }
+    for(Tracker<Cell> trackC : this.trackCell){
+      trackC.update(this);
+    }
+  }
+
+
+  String getExpression() {
     return this.expression;
   }
 
+  @Override
+  public void update(Object changed) {
+    Cell ref = (Cell) changed;
+    ref.value = new InvalidValue(ref.expression);  //Cells value is invalid
+    if (!ref.spreadsheet.recompCells.contains(ref)){
+      ref.spreadsheet.recompCells.add(ref); //adding Cell to the Set of Cells to be recomputed
+    }
+    for(Tracker<Cell> trackC : ref.trackCell){
+      trackC.update(ref);  //informing all the trackers subscribed to it that it has changed
+    }
+  }
 }
