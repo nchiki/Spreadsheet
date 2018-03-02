@@ -9,7 +9,7 @@ import common.api.value.Value;
 import java.util.HashSet;
 import java.util.Set;
 
-public class Cell implements Tracker{
+public class Cell implements Tracker<Cell>{
 
   private Value value;
   private String expression;
@@ -49,6 +49,10 @@ public class Cell implements Tracker{
     }
   }
 
+  CellLocation getLocation(){
+    return location;
+  }
+
   void setExpression(String expr) {   //clears references and Tracker Set after changing cell's expression
     this.expression = expr;
     for(Cell ref : this.references){
@@ -70,20 +74,17 @@ public class Cell implements Tracker{
     }
   }
 
-
   String getExpression() {
     return this.expression;
   }
 
   @Override
-  public void update(Object changed) {
-    Cell ref = (Cell) changed;
-    ref.value = new InvalidValue(ref.expression);  //Cells value is invalid
-    if (!ref.spreadsheet.recompCells.contains(ref)){
-      ref.spreadsheet.recompCells.add(ref); //adding Cell to the Set of Cells to be recomputed
-    }
-    for(Tracker<Cell> trackC : ref.trackCell){
-      trackC.update(ref);  //informing all the trackers subscribed to it that it has changed
+  public void update(Cell changed) {
+    value = new InvalidValue(expression);
+    if(spreadsheet.updateCell(location)) {
+      for (Tracker<Cell> t : trackCell) {
+        t.update(this);
+      }
     }
   }
 }

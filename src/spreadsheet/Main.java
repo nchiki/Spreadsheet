@@ -20,3 +20,9 @@ public class Main {
   }
 
 }
+
+// Hey Pani,
+//something is wrong with my code (you probably already noticed), I always get a NullPointerException,
+// and I think I got the logic wrong, but unfortunately, I can't find the mistake :((((
+// the spec sheet was a bit too vague in my opinion, which is why I might have understood sth wrong
+// or I might have implemented a method wrong cause I thought it was supposed to do sth. else

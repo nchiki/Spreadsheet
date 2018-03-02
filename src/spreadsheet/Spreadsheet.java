@@ -1,22 +1,30 @@
 package spreadsheet;
 
 import common.api.CellLocation;
+import common.api.ExpressionUtils;
 import common.api.Tabular;
 import common.api.value.InvalidValue;
 import common.api.value.LoopValue;
 import common.api.value.StringValue;
 import common.api.value.Value;
 import common.api.value.ValueEvaluator;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import sun.awt.image.ImageWatched.Link;
 
 public class Spreadsheet implements Tabular {
 
   public HashMap<CellLocation, Cell> cells;
-  List<Cell> recompCells;
+  public Set<Cell> recompCells = new HashSet<>();
+  private Set<Cell> ignoreCells = new HashSet<>();
+  Deque<CellLocation> queue = new ArrayDeque<>();
 
   @Override
   public void setExpression(CellLocation location, String expression) {
@@ -33,7 +41,7 @@ public class Spreadsheet implements Tabular {
   @Override
   public String getExpression(CellLocation location) {
     if (cells.containsKey(location)) {
-      return cells.get(location).getExpression().toString();
+      return cells.get(location).getExpression();
     } else {
       return "";
     }
@@ -50,82 +58,112 @@ public class Spreadsheet implements Tabular {
 
   @Override
   public void recompute() {
-    while (!recompCells.isEmpty()) {  //no for loop cause length will change due to removal of cells
-      Cell cell = recompCells.get(0);
-      cell.setValue(new StringValue(cell.getExpression()));
-      recompCells.remove(cell);
-      //include call to recomputeCell
+    Iterator<Cell> iterator = recompCells.iterator();
+    while (iterator.hasNext()) {
+      Cell c = iterator.next();
+      recomputeCell(c);
+      if (!ignoreCells.contains(c)) {
+        recomputeCell(c);
+      }
+      iterator.remove();
     }
+    ignoreCells.clear();
+  }
+
+  public boolean isIn(Cell cell) {
+    return recompCells.contains(cell);
   }
 
   private void recomputeCell(Cell c) {
-    //call to checkLoops to check if there are any loops inside
+    checkLoops(c, new LinkedHashSet<>());
+    if (!queue.contains(c.getLocation())) {
+      return;
+    }
+
+    for(Cell ref : c.references){
+      if(queue.contains(ref.getLocation())){
+        queue.remove(c.getLocation());
+        queue.addLast(c.getLocation());
+        return;
+      }
+    }
+
+    calculateCellValue(c);
   }
 
-  private void checkLoops(Cell c, LinkedHashSet<Cell> cellsSeen) {
-    if (cellsSeen.contains(c)) {
-      //call to markAsValidatedLoop
+  private void calculateCellValue(Cell c) {
+    Map<CellLocation, Double> valueMap = new HashMap<>();
+    SpreadsheetValueEvaluator eval = new SpreadsheetValueEvaluator();
+    for (Cell d : c.references) {
+      d.getValue().evaluate(eval);
+      valueMap.put(d.getLocation(), eval.getDouble());
+    }
+    c.setValue(ExpressionUtils.computeValue(c.getExpression(), valueMap));
+     queue.remove(c.getLocation());
+  }
+
+  class SpreadsheetValueEvaluator implements ValueEvaluator {
+
+    private double doubleRes = 0;
+
+    @Override
+    public void evaluateDouble(double value) {
+      doubleRes = value;
+    }
+
+    public double getDouble() {
+      return doubleRes;
+    }
+
+    @Override
+    public void evaluateInvalid(String expression) {
+
+    }
+
+    @Override
+    public void evaluateLoop() {
+
+    }
+
+    @Override
+    public void evaluateString(String expression) {
+
     }
   }
 
-  //markAsValidatedLoop has to run recursively on the cells the startCell depends on
+  private void checkLoops(Cell c, LinkedHashSet<Cell> cellsSeen) { //is correct and finished
+    if (cellsSeen.contains(c)) {
+      markAsValidatedLoop(c, cellsSeen);
+    } else {
+      cellsSeen.add(c);
+      for (Cell cell : c.references) {
+        checkLoops(cell, cellsSeen);
+      }
+      cellsSeen.remove(c);
+    }
+  }
 
+  private void markAsValidatedLoop(Cell startCell, LinkedHashSet<Cell> cells) {
+    ignoreCells.addAll(cells);
+    boolean traverse = false;
+    Iterator<Cell> iterator = cells.iterator();
+    while (iterator.hasNext()) {
+      Cell cell = iterator.next();
+      if (cell.equals(startCell)) {
+        traverse = true;
+      }
+      if (traverse) {
+        cell.setValue(LoopValue.INSTANCE);
+      }
 
+    }
+  }
+    public boolean updateCell(CellLocation location){
+      if(queue.contains(location)) {
+        return false;
+      }
+      queue.addLast(location);
+      return true;
+    }
+  }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* private void markAsValidatedLoop(Cell startCell, LinkedHashSet<Cell> cells) { //noch verbessern
-   Set<Cell> beforeStart = new HashSet<>();
-   Set<Cell> afterStart = new HashSet<>();
-   for (Cell c : cells) {
-     if (c == startCell) {
-          break;
-     } else {
-       beforeStart.add(c);
-       c.setValue(new InvalidValue(c.getExpression()));
-       cells.remove(c);
-     }
-   }
-   for (Cell c : cells) {
-     // c.setValue(new LoopValue()); //restlichen Elemente in cells sind alle ab startcell
-     afterStart.add(c);
-   }
-   cells.clear();
-   for(Cell c : beforeStart){
-     cells.add(c);
-   }
-   for(Cell c : afterStart){
-     cells.add(c);
-   }
-
- }
-*/
-}
